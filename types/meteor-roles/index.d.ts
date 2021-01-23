@@ -17,156 +17,282 @@ declare namespace Meteor {
 
 /* Declaring in the format prescribed by Meteor */
 declare module "meteor/alanning:roles" {
+
+    /**
+     * Provides functions related to user authorization. Compatible with built-in Meteor accounts packages.
+     *
+     * It uses `roles` field to `Meteor.users` documents which is an array of subdocuments with the following
+     * schema:
+     *  - `_id`: role name
+     *  - `scope`: scope name
+     *  - `assigned`: boolean, if the role was manually assigned (set), or was automatically inferred (eg., subroles)
+     *
+     * Roles themselves are accessible throgh `Meteor.roles` collection and documents consist of:
+     *  - `_id`: role name
+     *  - `children`: list of subdocuments:
+     *    - `_id`
+     *
+     * Children list elements are subdocuments so that they can be easier extended in the future or by plugins.
+     *
+     * Roles can have multiple parents and can be children (subroles) of multiple roles.
+     *
+     * Example: `{_id: 'admin', children: [{_id: 'editor'}]}`
+     *
+     * @module Roles
+     */
     namespace Roles {
         /**
-         * Constant used to reference the special 'global' group that
-         * can be used to apply blanket permissions across all groups.
-         *
-         * @example
-         *     Roles.addUsersToRoles(user, 'admin', Roles.GLOBAL_GROUP)
-         *     Roles.userIsInRole(user, 'admin') // => true
-         *
-         *     Roles.setUserRoles(user, 'support-staff', Roles.GLOBAL_GROUP)
-         *     Roles.userIsInRole(user, 'support-staff') // => true
-         *     Roles.userIsInRole(user, 'admin') // => false
+         * Used as a global group (now scope) name. Not used anymore.
          *
          * @property GLOBAL_GROUP
-         * @type String
          * @static
-         * @final
+         * @deprecated
          */
         var GLOBAL_GROUP: string;
 
         /**
-         * Subscription handle for the currently logged in user's permissions.
-         *
-         * NOTE: The corresponding publish function, `_roles`, depends on
-         * `this.userId` so it will automatically re-run when the currently
-         * logged-in user changes.
+         * Subscription handle for the collection of all existing roles.
          *
          * @example
          *
-         *     `Roles.subscription.ready()` // => `true` if user roles have been loaded
+         *     Roles.subscription.ready(); // true if roles have been loaded
          *
          * @property subscription
          * @type Object
          * @for Roles
+         * @static
          */
         var subscription: Subscription;
 
         /**
-         * Add users to roles. Will create roles as needed.
+         * Create a new role.
          *
-         * NOTE: Mixing grouped and non-grouped roles for the same user
-         *       is not supported and will throw an error.
+         * @method createRole
+         * @param {String} roleName Name of role.
+         * @param {Object} [options] Options:
+         *   - `unlessExists`: if `true`, exception will not be thrown in the role already exists
+         * @return {String} ID of the new role.
+         * @static
+         */
+        function createRole(role: string, options?: Object): string;
+
+        /**
+         * Delete an existing role.
          *
-         * Makes 2 calls to database:
-         *  1. retrieve list of all existing roles
-         *  2. update users' roles
+         * If the role is set for any user, it is automatically unset.
+         *
+         * @method deleteRole
+         * @param {String} roleName Name of role.
+         * @static
+         */
+        function deleteRole(role: string): void;
+
+        /**
+         * Rename an existing role.
+         *
+         * @method renameRole
+         * @param {String} oldName Old name of a role.
+         * @param {String} newName New name of a role.
+         * @static
+         */
+        function renameRole(oldName: string, newName: string): void;
+
+        /**
+         * Add role parent to roles.
+         *
+         * Previous parents are kept (role can have multiple parents). For users which have the
+         * parent role set, new subroles are added automatically.
+         *
+         * @method addRolesToParent
+         * @param {Array|String} rolesNames Name(s) of role(s).
+         * @param {String} parentName Name of parent role.
+         * @static
+         */
+        function addRolesToParent(rolesNames: string[] | string, parentName: string): void;
+
+        /**
+         * Remove role parent from roles.
+         *
+         * Other parents are kept (role can have multiple parents). For users which have the
+         * parent role set, removed subrole is removed automatically.
+         *
+         * @method removeRolesFromParent
+         * @param {Array|String} rolesNames Name(s) of role(s).
+         * @param {String} parentName Name of parent role.
+         * @static
+         */
+        function removeRolesFromParent(rolesNames: string[] | string, parentName: string): void;
+
+        /**
+         * Add users to roles.
+         *
+         * Adds roles to existing roles for each user.
          *
          * @example
          *     Roles.addUsersToRoles(userId, 'admin')
          *     Roles.addUsersToRoles(userId, ['view-secrets'], 'example.com')
          *     Roles.addUsersToRoles([user1, user2], ['user','editor'])
          *     Roles.addUsersToRoles([user1, user2], ['glorious-admin', 'perform-action'], 'example.org')
-         *     Roles.addUsersToRoles(userId, 'admin', Roles.GLOBAL_GROUP)
          *
          * @method addUsersToRoles
-         * @param {Array|String} users User id(s) or object(s) with an _id field
-         * @param {Array|String} roles Name(s) of roles/permissions to add users to
-         * @param {String} [group] Optional group name. If supplied, roles will be
-         *                         specific to that group.
-         *                         Group names can not start with '$' or numbers.
-         *                         Periods in names '.' are automatically converted
-         *                         to underscores.
-         *                         The special group Roles.GLOBAL_GROUP provides
-         *                         a convenient way to assign blanket roles/permissions
-         *                         across all groups.  The roles/permissions in the
-         *                         Roles.GLOBAL_GROUP group will be automatically
-         *                         included in checks for any group.
+         * @param {Array|String} users User ID(s) or object(s) with an `_id` field.
+         * @param {Array|String} roles Name(s) of roles to add users to. Roles have to exist.
+         * @param {Object|String} [options] Options:
+         *   - `scope`: name of the scope, or `null` for the global role
+         *   - `ifExists`: if `true`, do not throw an exception if the role does not exist
+         *
+         * Alternatively, it can be a scope name string.
+         * @static
          */
         function addUsersToRoles(
             user: string | string[] | Object | Object[],
             roles: string | string[],
-            group?: string
+            options?: Object | string
         ): void;
 
         /**
-         * Create a new role. Whitespace will be trimmed.
+         * Set users' roles.
          *
-         * @method createRole
-         * @param {String} role Name of role
-         * @return {String} id of new role
+         * Replaces all existing roles with a new set of roles.
+         *
+         * @example
+         *     Roles.setUserRoles(userId, 'admin')
+         *     Roles.setUserRoles(userId, ['view-secrets'], 'example.com')
+         *     Roles.setUserRoles([user1, user2], ['user','editor'])
+         *     Roles.setUserRoles([user1, user2], ['glorious-admin', 'perform-action'], 'example.org')
+         *
+         * @method setUserRoles
+         * @param {Array|String} users User ID(s) or object(s) with an `_id` field.
+         * @param {Array|String} roles Name(s) of roles to add users to. Roles have to exist.
+         * @param {Object|String} [options] Options:
+         *   - `scope`: name of the scope, or `null` for the global role
+         *   - `ifExists`: if `true`, do not throw an exception if the role does not exist
+         *
+         * Alternatively, it can be a scope name string.
+         * @static
          */
-        function createRole(role: string): string;
+        function setUserRoles(
+            user: string | string[] | Object | Object[],
+            roles: string | string[],
+            options?: Object | string
+        ): void;
 
         /**
-         * Delete an existing role.  Will throw "Role in use" error if any users
-         * are currently assigned to the target role.
+         * Remove users from assigned roles.
          *
-         * @method deleteRole
-         * @param {String} role Name of role
+         * @example
+         *     Roles.removeUsersFromRoles(userId, 'admin')
+         *     Roles.removeUsersFromRoles([userId, user2], ['editor'])
+         *     Roles.removeUsersFromRoles(userId, ['user'], 'group1')
+         *
+         * @method removeUsersFromRoles
+         * @param {Array|String} users User ID(s) or object(s) with an `_id` field.
+         * @param {Array|String} roles Name(s) of roles to add users to. Roles have to exist.
+         * @param {Object|String} [options] Options:
+         *   - `scope`: name of the scope, or `null` for the global role
+         *
+         * Alternatively, it can be a scope name string.
+         * @static
          */
-        function deleteRole(role: string): void;
+        function removeUsersFromRoles(
+            user: string | string[] | Object | Object[],
+            roles?: string[],
+            options?: Object | string
+        ): void;
 
         /**
-         * Retrieve set of all existing roles
+         * Check if user has specified roles.
          *
-         * @method getAllRoles
-         * @return {Cursor} cursor of existing roles
+         * @example
+         *     // global roles
+         *     Roles.userIsInRole(user, 'admin')
+         *     Roles.userIsInRole(user, ['admin','editor'])
+         *     Roles.userIsInRole(userId, 'admin')
+         *     Roles.userIsInRole(userId, ['admin','editor'])
+         *
+         *     // scope roles (global roles are still checked)
+         *     Roles.userIsInRole(user, 'admin', 'group1')
+         *     Roles.userIsInRole(userId, ['admin','editor'], 'group1')
+         *     Roles.userIsInRole(userId, ['admin','editor'], {scope: 'group1'})
+         *
+         * @method userIsInRole
+         * @param {String|Object} user User ID or an actual user object.
+         * @param {Array|String} roles Name of role or an array of roles to check against. If array,
+         *                             will return `true` if user is in _any_ role.
+         *                             Roles do not have to exist.
+         * @param {Object|String} [options] Options:
+         *   - `scope`: name of the scope; if supplied, limits check to just that scope
+         *     the user's global roles will always be checked whether scope is specified or not
+         *   - `anyScope`: if set, role can be in any scope (`scope` option is ignored)
+         *
+         * Alternatively, it can be a scope name string.
+         * @return {Boolean} `true` if user is in _any_ of the target roles
+         * @static
          */
-        function getAllRoles(): Mongo.Cursor<Role>;
-
-        /**
-         * Retrieve users groups, if any
-         *
-         * @method getGroupsForUser
-         * @param {String|Object} user User Id or actual user object
-         * @param {String} [role] Optional name of roles to restrict groups to.
-         *
-         * @return {Array} Array of user's groups, unsorted. Roles.GLOBAL_GROUP will be omitted
-         */
-        function getGroupsForUser(
+        function userIsInRole(
             user: string | Object,
-            role?: string
-        ): string[];
+            roles: string | string[],
+            options?: Object | string
+        ): boolean;
 
         /**
-         * Retrieve users roles
+         * Retrieve user's roles.
          *
          * @method getRolesForUser
-         * @param {String|Object} user User Id or actual user object
-         * @param {String} [group] Optional name of group to restrict roles to.
-         *                         User's Roles.GLOBAL_GROUP will also be included.
+         * @param {String|Object} user User ID or an actual user object.
+         * @param {Object|String} [options] Options:
+         *   - `scope`: name of scope to provide roles for; if not specified, global roles are returned
+         *   - `anyScope`: if set, role can be in any scope (`scope` option is ignored)
+         *   - `fullObjects`: return full roles objects (`true`) or just names (`false`) (default `false`)
+         *   - `onlyAssigned`: return only assigned roles and not automatically inferred (like subroles)
+         *
+         * Alternatively, it can be a scope name string.
          * @return {Array} Array of user's roles, unsorted.
+         * @static
          */
         function getRolesForUser(
             user: string | Object,
-            group?: string
+            options?: Object | string
         ): string[];
+
+        /**
+         * Retrieve cursor of all existing roles.
+         *
+         * @method getAllRoles
+         * @param {Object} [queryOptions] Options which are passed directly
+         *                                through to `Meteor.roles.find(query, options)`.
+         * @return {Cursor} Cursor of existing roles.
+         * @static
+         */
+        function getAllRoles(queryOptions?: Object): Mongo.Cursor<Role>;
 
         /**
          * Retrieve all users who are in target role.
          *
-         * NOTE: This is an expensive query; it performs a full collection scan
-         * on the users collection since there is no index set on the 'roles' field.
-         * This is by design as most queries will specify an _id so the _id index is
-         * used automatically.
+         * Options:
          *
          * @method getUsersInRole
-         * @param {Array|String} role Name of role/permission.  If array, users
-         *                            returned will have at least one of the roles
-         *                            specified but need not have _all_ roles.
-         * @param {String} [group] Optional name of group to restrict roles to.
-         *                         User's Roles.GLOBAL_GROUP will also be checked.
-         * @param {Object} [options] Optional options which are passed directly
-         *                           through to `Meteor.users.find(query, options)`
-         * @return {Cursor} cursor of users in role
+         * @param {Array|String} roles Name of role or an array of roles. If array, users
+         *                             returned will have at least one of the roles
+         *                             specified but need not have _all_ roles.
+         *                             Roles do not have to exist.
+         * @param {Object|String} [options] Options:
+         *   - `scope`: name of the scope to restrict roles to; user's global
+         *     roles will also be checked
+         *   - `anyScope`: if set, role can be in any scope (`scope` option is ignored)
+         *   - `queryOptions`: options which are passed directly
+         *     through to `Meteor.users.find(query, options)`
+         *
+         * Alternatively, it can be a scope name string.
+         * @param {Object} [queryOptions] Options which are passed directly
+         *                                through to `Meteor.users.find(query, options)`
+         * @return {Cursor} Cursor of users in roles.
+         * @static
          */
         function getUsersInRole(
             role: string | string[],
-            group?: string,
-            options?: {
+            options?: Object | string,
+            queryOptions?: {
                 sort?: Mongo.SortSpecifier;
                 skip?: number;
                 limit?: number;
@@ -176,89 +302,63 @@ declare module "meteor/alanning:roles" {
             }): Mongo.Cursor<Meteor.User>;
 
         /**
-         * Remove users from roles
+         * Deprecated. Use `getScopesForUser` instead.
          *
-         * @example
-         *     Roles.removeUsersFromRoles(users.bob, 'admin')
-         *     Roles.removeUsersFromRoles([users.bob, users.joe], ['editor'])
-         *     Roles.removeUsersFromRoles([users.bob, users.joe], ['editor', 'user'])
-         *     Roles.removeUsersFromRoles(users.eve, ['user'], 'group1')
-         *
-         * @method removeUsersFromRoles
-         * @param {Array|String} users User id(s) or object(s) with an _id field
-         * @param {Array|String} roles Name(s) of roles to add users to
-         * @param {String} [group] Optional. Group name. If supplied, only that
-         *                         group will have roles removed.
+         * @method getGroupsForUser
+         * @static
+         * @deprecated
          */
-        function removeUsersFromRoles(
-            user: string | string[] | Object | Object[],
-            roles?: string[],
-            group?: string
-        ): void;
+        function getGroupsForUser(
+            user: string | Object,
+            role?: string
+        ): string[];
 
         /**
-         * Set a users roles/permissions.
+         * Retrieve users scopes, if any.
          *
-         * @example
-         *     Roles.setUserRoles(userId, 'admin')
-         *     Roles.setUserRoles(userId, ['view-secrets'], 'example.com')
-         *     Roles.setUserRoles([user1, user2], ['user','editor'])
-         *     Roles.setUserRoles([user1, user2], ['glorious-admin', 'perform-action'], 'example.org')
-         *     Roles.setUserRoles(userId, 'admin', Roles.GLOBAL_GROUP)
+         * @method getScopesForUser
+         * @param {String|Object} user User ID or an actual user object.
+         * @param {Array|String} [roles] Name of roles to restrict scopes to.
          *
-         * @method setUserRoles
-         * @param {Array|String} users User id(s) or object(s) with an _id field
-         * @param {Array|String} roles Name(s) of roles/permissions to add users to
-         * @param {String} [group] Optional group name. If supplied, roles will be
-         *                         specific to that group.
-         *                         Group names can not start with '$'.
-         *                         Periods in names '.' are automatically converted
-         *                         to underscores.
-         *                         The special group Roles.GLOBAL_GROUP provides
-         *                         a convenient way to assign blanket roles/permissions
-         *                         across all groups.  The roles/permissions in the
-         *                         Roles.GLOBAL_GROUP group will be automatically
-         *                         included in checks for any group.
+         * @return {Array} Array of user's scopes, unsorted.
+         * @static
          */
-        function setUserRoles(
-            user: string | string[] | Object | Object[],
-            roles: string | string[],
-            group?: string
-        ): void;
+        function getScopesForUser(user: string | Object, roles?: string[] | string): string[];
 
         /**
-         * Check if user has specified permissions/roles
+         * Rename a scope.
          *
-         * @example
-         *     // non-group usage
-         *     Roles.userIsInRole(user, 'admin')
-         *     Roles.userIsInRole(user, ['admin','editor'])
-         *     Roles.userIsInRole(userId, 'admin')
-         *     Roles.userIsInRole(userId, ['admin','editor'])
+         * Roles assigned with a given scope are changed to be under the new scope.
          *
-         *     // per-group usage
-         *     Roles.userIsInRole(user,   ['admin','editor'], 'group1')
-         *     Roles.userIsInRole(userId, ['admin','editor'], 'group1')
-         *     Roles.userIsInRole(userId, ['admin','editor'], Roles.GLOBAL_GROUP)
-         *
-         *     // this format can also be used as short-hand for Roles.GLOBAL_GROUP
-         *     Roles.userIsInRole(user, 'admin')
-         *
-         * @method userIsInRole
-         * @param {String|Object} user User Id or actual user object
-         * @param {String|Array} roles Name of role/permission or Array of
-         *                            roles/permissions to check against.  If array,
-         *                            will return true if user is in _any_ role.
-         * @param {String} [group] Optional. Name of group.  If supplied, limits check
-         *                         to just that group.
-         *                         The user's Roles.GLOBAL_GROUP will always be checked
-         *                         whether group is specified or not.
-         * @return {Boolean} true if user is in _any_ of the target roles
+         * @method renameScope
+         * @param {String} oldName Old name of a scope.
+         * @param {String} newName New name of a scope.
+         * @static
          */
-        function userIsInRole(
-            user: string | string[] | Object | Object[],
-            roles: string | string[],
-            group?: string
-        ): boolean;
+        function renameScope(oldName: string, newName: string): void;
+
+        
+        /**
+         * Remove a scope.
+         *
+         * Roles assigned with a given scope are removed.
+         *
+         * @method removeScope
+         * @param {String} name The name of a scope.
+         * @static
+         */
+        function removeScope(name: string): void;
+
+        /**
+         * Find out if a role is an ancestor of another role.
+         *
+         * WARNING: If you check this on the client, please make sure all roles are published.
+         *
+         * @method isParentOf
+         * @param {String} parentRoleName The role you want to research.
+         * @param {String} childRoleName The role you expect to be among the children of parentRoleName.
+         * @static
+         */
+        function isParentOf(parentRoleName: string, childRoleName: string): boolean;
     }
 }
