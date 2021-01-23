@@ -337,7 +337,7 @@ declare module "meteor/alanning:roles" {
          */
         function renameScope(oldName: string, newName: string): void;
 
-        
+
         /**
          * Remove a scope.
          *
