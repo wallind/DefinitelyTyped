@@ -1,3 +1,4 @@
+import { Roles } from 'meteor/alanning:roles'
 import * as _ from 'underscore';
 
 /**
