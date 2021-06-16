@@ -45,6 +45,7 @@ const backend = new ShareDB({
 });
 console.log(backend.db);
 backend.on('error', (error) => console.error(error));
+backend.on('send', (agent, context) => console.log(agent, context));
 backend.addListener('timing', (type, time, request) => console.log(type, new Date(time), request));
 
 // getOps allows for `from` and `to` to both be `null`:
@@ -57,13 +58,6 @@ console.log(backend.extraDbs);
 
 backend.addProjection('notes_minimal', 'notes', {title: true, creator: true, lastUpdateTime: true});
 
-// Test module augmentation to attach custom typed properties to `agent.custom`.
-import _ShareDbAgent = require('sharedb/lib/agent');
-declare module 'sharedb/lib/agent' {
-    interface Custom {
-        user?: {id: string};
-    }
-}
 // Exercise middleware (backend.use)
 type SubmitRelatedActions = 'afterWrite' | 'apply' | 'commit' | 'submit';
 const submitRelatedActions: SubmitRelatedActions[] = ['afterWrite', 'apply', 'commit', 'submit'];
@@ -88,6 +82,7 @@ for (const action of submitRelatedActions) {
             request.op.op,
             request.op.create,
             request.op.del,
+            request.extra.source,
         );
         callback();
     });
@@ -172,6 +167,10 @@ backend.use('readSnapshots', (context, callback) => {
         context.snapshotType,
     );
     callback();
+});
+
+backend.on('submitRequestEnd', (error, request) => {
+    console.log(request.op);
 });
 
 const connection = backend.connect();
@@ -273,9 +272,26 @@ function startClient(callback) {
         console.log(err, results);
     });
     // SQL-ish query adapter that takes a string query condition
-    connection.createSubscribeQuery('examples', 'numClicks >= 5', null, (err, results) => {
-        console.log(err, results);
+    const query = connection.createSubscribeQuery<MyDoc>('examples', 'numClicks >= 5', null, (err, results) => {
+        results.forEach((result) => result.data.foo > 0);
     });
+
+    query.on('ready', () => {});
+    query.on('error', (error) => console.log(error));
+    query.on('insert', async (inserted) => {
+        inserted.forEach((i) => i.data.foo);
+        await new Promise<void>((resolve) => resolve());
+    });
+    query.on('remove', (removed) => {
+        removed.forEach((r) => r.data.bar);
+    });
+    query.on('move', (moved, from, to) => {
+        moved.forEach(() => console.log(from - to));
+    });
+    query.on('changed', (results) => {
+        results.forEach((result) => result.data.foo);
+    });
+    query.on('extra', (extra) => console.log(extra));
 
     const anotherDoc = doc.connection.get('examples', 'another-counter');
     console.log(anotherDoc.collection);
@@ -291,7 +307,9 @@ function startClient(callback) {
         if (doc.hasWritePending()) throw new Error();
     });
 
-    connection.fetchSnapshot('examples', 'foo', 123, (error, snapshot) => {
+    doc.submitOp([{insert: 'foo', attributes: {bold: true}}], {source: {deep: true}});
+
+    connection.fetchSnapshot('examples', 'foo', 123, (error, snapshot: ShareDBClient.Snapshot) => {
         if (error) throw error;
         console.log(snapshot.data);
     });
@@ -312,3 +330,18 @@ function startClient(callback) {
 
     connection.close();
 }
+
+class SocketLike {
+    readyState = 1;
+
+    close(reason?: number): void {}
+    send(data: any): void {}
+
+    onmessage: (event: any) => void;
+    onclose: (event: any) => void;
+    onerror: (event: any) => void;
+    onopen: (event: any) => void;
+}
+
+const socketLike = new SocketLike();
+new ShareDBClient.Connection(socketLike);

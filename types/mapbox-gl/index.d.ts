@@ -1,4 +1,4 @@
-// Type definitions for Mapbox GL JS 2.0
+// Type definitions for Mapbox GL JS 2.3
 // Project: https://github.com/mapbox/mapbox-gl-js
 // Definitions by: Dominik Bruderer <https://github.com/dobrud>
 //                 Patrick Reames <https://github.com/patrickr>
@@ -6,8 +6,8 @@
 //                 Dmytro Gokun <https://github.com/dmytro-gokun>
 //                 Liam Clarke <https://github.com/LiamAttClarke>
 //                 Vladimir Dashukevich <https://github.com/life777>
-//                 Marko Klopets <https://github.com/mklopets>
 //                 André Fonseca <https://github.com/amxfonseca>
+//                 makspetrov <https://github.com/Nosfit>
 // Definitions: https://github.com/DefinitelyTyped/DefinitelyTyped
 // TypeScript Version: 3.0
 
@@ -127,6 +127,7 @@ declare namespace mapboxgl {
         | 'case'
         | 'match'
         | 'coalesce'
+        | 'within'
         // Ramps, scales, curves
         | 'interpolate'
         | 'interpolate-hcl'
@@ -371,6 +372,18 @@ declare namespace mapboxgl {
          */
         setTerrain(terrain?: TerrainSpecification | null): this;
 
+        getTerrain(): TerrainSpecification | null;
+
+        showTerrainWireframe: boolean;
+
+        /**
+         *
+         * @param lngLat The coordinate to query
+         * @param options Optional {ElevationQueryOptions}
+         * @returns The elevation in meters at mean sea level or null
+         */
+        queryTerrainElevation(lngLat: mapboxgl.LngLatLike, options?: ElevationQueryOptions): number | null;
+
         setFeatureState(
             feature: FeatureIdentifier | mapboxgl.MapboxGeoJSONFeature,
             state: { [key: string]: any },
@@ -538,6 +551,7 @@ declare namespace mapboxgl {
         ): this;
         once<T extends keyof MapEventType>(type: T, listener: (ev: MapEventType[T] & EventData) => void): this;
         once(type: string, listener: (ev: any) => void): this;
+        once(type: string): Promise<this>;
 
         off<T extends keyof MapLayerEventType>(
             type: T,
@@ -562,6 +576,9 @@ declare namespace mapboxgl {
         touchZoomRotate: TouchZoomRotateHandler;
 
         touchPitch: TouchPitchHandler;
+
+        getFog(): Fog | null;
+        setFog(fog: Fog): this;
     }
 
     export interface MapboxOptions {
@@ -668,6 +685,13 @@ declare namespace mapboxgl {
         locale?: { [key: string]: string };
 
         /**
+         * Overrides the generation of all glyphs and font settings except font-weight keywords
+         * Also overrides localIdeographFontFamily
+         * @default null
+         */
+        localFontFamily?: string;
+
+        /**
          * If specified, defines a CSS font-family for locally overriding generation of glyphs in the
          * 'CJK Unified Ideographs' and 'Hangul Syllables' ranges. In these ranges, font settings from
          * the map's style will be ignored, except for font-weight keywords (light/regular/medium/bold).
@@ -698,6 +722,14 @@ declare namespace mapboxgl {
 
         /** Minimum zoom of the map. */
         minZoom?: number;
+
+        /**
+         * If true, map will prioritize rendering for performance by reordering layers
+         * If false, layers will always be drawn in the specified order
+         *
+         * @default true
+         */
+        optimizeForTerrain?: boolean;
 
         /** If true, The maps canvas can be exported to a PNG using map.getCanvas().toDataURL();. This is false by default as a performance optimization. */
         preserveDrawingBuffer?: boolean;
@@ -772,6 +804,13 @@ declare namespace mapboxgl {
          * @default null
          */
         accessToken?: string;
+
+        /**
+         * Allows for the usage of the map in automated tests without an accessToken with custom self-hosted test fixtures.
+         *
+         * @default null
+        */
+        testMode?: boolean;
     }
 
     type quat = number[];
@@ -1200,6 +1239,7 @@ declare namespace mapboxgl {
     export interface Style {
         bearing?: number;
         center?: number[];
+        fog?: Fog;
         glyphs?: string;
         layers?: AnyLayer[];
         metadata?: any;
@@ -1208,6 +1248,7 @@ declare namespace mapboxgl {
         light?: Light;
         sources?: Sources;
         sprite?: string;
+        terrain?: TerrainSpecification;
         transition?: Transition;
         version: number;
         zoom?: number;
@@ -1226,6 +1267,12 @@ declare namespace mapboxgl {
         'color-transition'?: Transition;
         intensity?: number;
         'intensity-transition'?: Transition;
+    }
+
+    export interface Fog {
+        color?: string | Expression;
+        'horizon-blend'?: number | Expression;
+        range?: number[] | Expression;
     }
 
     export interface Sources {
@@ -1906,10 +1953,11 @@ declare namespace mapboxgl {
         pitch?: number;
         /** If zooming, the zoom center (defaults to map center) */
         around?: LngLatLike;
+        /** Dimensions in pixels applied on each side of the viewport for shifting the vanishing point. */
+        padding?: number | PaddingOptions;
     }
 
     export interface CameraForBoundsOptions extends CameraOptions {
-        padding?: number | PaddingOptions;
         offset?: PointLike;
         maxZoom?: number;
     }
@@ -1941,7 +1989,6 @@ declare namespace mapboxgl {
 
     export interface FitBoundsOptions extends mapboxgl.FlyToOptions {
         linear?: boolean;
-        padding?: number | mapboxgl.PaddingOptions;
         offset?: mapboxgl.PointLike;
         maxZoom?: number;
         maxDuration?: number;
@@ -2069,8 +2116,8 @@ declare namespace mapboxgl {
         interactive?: boolean;
 
         filter?: any[];
-        layout?: Layout;
-        paint?: object;
+        layout?: AnyLayout;
+        paint?: AnyPaint;
     }
 
     interface BackgroundLayer extends Layer {
@@ -2318,7 +2365,7 @@ declare namespace mapboxgl {
         'symbol-avoid-edges'?: boolean;
         'symbol-z-order'?: 'viewport-y' | 'source';
         'icon-allow-overlap'?: boolean | StyleFunction | Expression;
-        'icon-ignore-placement'?: boolean;
+        'icon-ignore-placement'?: boolean | Expression;
         'icon-optional'?: boolean;
         'icon-rotation-alignment'?: 'map' | 'viewport' | 'auto';
         'icon-size'?: number | StyleFunction | Expression;
@@ -2339,7 +2386,7 @@ declare namespace mapboxgl {
         'text-max-width'?: number | StyleFunction | Expression;
         'text-line-height'?: number | Expression;
         'text-letter-spacing'?: number | Expression;
-        'text-justify'?: 'left' | 'center' | 'right' | Expression;
+        'text-justify'?: 'auto' | 'left' | 'center' | 'right' | Expression;
         'text-anchor'?: Anchor | StyleFunction | Expression;
         'text-max-angle'?: number | Expression;
         'text-rotate'?: number | StyleFunction | Expression;
@@ -2471,4 +2518,8 @@ declare namespace mapboxgl {
         'sky-opacity'?: number | Expression;
         'sky-type'?: 'gradient' | 'atmosphere';
     }
+
+    export type ElevationQueryOptions = {
+        exaggerated: boolean
+    };
 }

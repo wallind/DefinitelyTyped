@@ -21,6 +21,11 @@ interface iParams {
     sslEnabled?: boolean;
     options?: ClientConfiguration;
     region?: string;
+    engine?: 'mysql' | 'pg';
+    formatOptions?: {
+        deserializeDate?: boolean;
+        treatAsLocalDate?: boolean;
+    };
 }
 
 interface Transaction {
@@ -45,7 +50,8 @@ interface iDataAPIClient {
     query<T = any>(sql: string, params?: [] | unknown): Promise<iDataAPIQueryResult<T>>; // params can be [] or {};
     query<T = any>(obj: {
         sql: string;
-        parameters: [] | unknown;
+        parameters?: [] | unknown;
+        transactionId?: string;
         database?: string;
         hydrateColumnNames?: boolean;
     }): Promise<iDataAPIQueryResult<T>>;
